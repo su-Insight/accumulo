@@ -27,7 +27,6 @@ import static org.apache.accumulo.core.metadata.schema.MetadataSchema.TabletsSec
 import static org.apache.accumulo.core.metadata.schema.MetadataSchema.TabletsSection.ServerColumnFamily.SELECTED_COLUMN;
 import static org.apache.accumulo.core.metadata.schema.MetadataSchema.TabletsSection.ServerColumnFamily.TIME_COLUMN;
 import static org.apache.accumulo.core.metadata.schema.MetadataSchema.TabletsSection.TabletColumnFamily.PREV_ROW_COLUMN;
-import static org.apache.accumulo.core.metadata.schema.MetadataSchema.TabletsSection.TabletColumnFamily.encodePrevEndRow;
 
 import java.util.Objects;
 import java.util.function.BiConsumer;
@@ -47,6 +46,7 @@ import org.apache.accumulo.core.metadata.schema.MetadataSchema.TabletsSection.Bu
 import org.apache.accumulo.core.metadata.schema.MetadataSchema.TabletsSection.CompactedColumnFamily;
 import org.apache.accumulo.core.metadata.schema.MetadataSchema.TabletsSection.DataFileColumnFamily;
 import org.apache.accumulo.core.metadata.schema.MetadataSchema.TabletsSection.ExternalCompactionColumnFamily;
+import org.apache.accumulo.core.metadata.schema.MetadataSchema.TabletsSection.TabletColumnFamily;
 import org.apache.accumulo.core.metadata.schema.TabletMetadata;
 import org.apache.accumulo.core.metadata.schema.TabletMetadata.ColumnType;
 import org.apache.accumulo.core.metadata.schema.TabletMetadata.Location;
@@ -69,15 +69,18 @@ public class ConditionalTabletMutatorImpl extends TabletMutatorBase<Ample.Condit
   private final ConditionalMutation mutation;
   private final Consumer<ConditionalMutation> mutationConsumer;
   private final Ample.ConditionalTabletsMutator parent;
+  private final boolean prevEndRowSupplied;
 
   private final BiConsumer<KeyExtent,Ample.RejectionHandler> rejectionHandlerConsumer;
 
   private final KeyExtent extent;
 
   private boolean sawOperationRequirement = false;
+  private boolean requireAbsentTabletCalled = false;
 
   protected ConditionalTabletMutatorImpl(Ample.ConditionalTabletsMutator parent,
-      ServerContext context, KeyExtent extent, Consumer<ConditionalMutation> mutationConsumer,
+      ServerContext context, KeyExtent extent, Text prevEndRow,
+      Consumer<ConditionalMutation> mutationConsumer,
       BiConsumer<KeyExtent,Ample.RejectionHandler> rejectionHandlerConsumer) {
     super(new ConditionalMutation(extent.toMetaRow()));
     this.mutation = (ConditionalMutation) super.mutation;
@@ -85,6 +88,18 @@ public class ConditionalTabletMutatorImpl extends TabletMutatorBase<Ample.Condit
     this.parent = parent;
     this.rejectionHandlerConsumer = rejectionHandlerConsumer;
     this.extent = extent;
+
+    // If prevEndRow is null, then we are creating a new Tablet in which case
+    // there is no prevEndRow.
+    if (prevEndRow != null) {
+      Condition c =
+          new Condition(PREV_ROW_COLUMN.getColumnFamily(), PREV_ROW_COLUMN.getColumnQualifier())
+              .setValue(TabletColumnFamily.encodePrevEndRow(prevEndRow).get());
+      mutation.addCondition(c);
+      prevEndRowSupplied = true;
+    } else {
+      prevEndRowSupplied = false;
+    }
   }
 
   @Override
@@ -104,16 +119,6 @@ public class ConditionalTabletMutatorImpl extends TabletMutatorBase<Ample.Condit
     sawOperationRequirement = true;
     Condition c = new Condition(getLocationFamily(location.getType()), location.getSession())
         .setValue(location.getHostPort());
-    mutation.addCondition(c);
-    return this;
-  }
-
-  @Override
-  public Ample.ConditionalTabletMutator requirePrevEndRow(Text per) {
-    Preconditions.checkState(updatesEnabled, "Cannot make updates after calling mutate.");
-    Condition c =
-        new Condition(PREV_ROW_COLUMN.getColumnFamily(), PREV_ROW_COLUMN.getColumnQualifier())
-            .setValue(encodePrevEndRow(per).get());
     mutation.addCondition(c);
     return this;
   }
@@ -144,6 +149,7 @@ public class ConditionalTabletMutatorImpl extends TabletMutatorBase<Ample.Condit
     Condition c = new Condition("", "").setIterators(is);
     mutation.addCondition(c);
     sawOperationRequirement = true;
+    requireAbsentTabletCalled = true;
     return this;
   }
 
@@ -168,9 +174,6 @@ public class ConditionalTabletMutatorImpl extends TabletMutatorBase<Ample.Condit
 
   private void requireSameSingle(TabletMetadata tabletMetadata, ColumnType type) {
     switch (type) {
-      case PREV_ROW:
-        requirePrevEndRow(tabletMetadata.getPrevEndRow());
-        break;
       case COMPACT_ID: {
         Condition c =
             new Condition(COMPACT_COLUMN.getColumnFamily(), COMPACT_COLUMN.getColumnQualifier());
@@ -261,6 +264,9 @@ public class ConditionalTabletMutatorImpl extends TabletMutatorBase<Ample.Condit
   public void submit(Ample.RejectionHandler rejectionCheck) {
     Preconditions.checkState(updatesEnabled, "Cannot make updates after calling mutate.");
     Preconditions.checkState(sawOperationRequirement, "No operation requirements were seen");
+    if (!prevEndRowSupplied && !requireAbsentTabletCalled) {
+      requireAbsentTablet();
+    }
     getMutation();
     mutationConsumer.accept(mutation);
     rejectionHandlerConsumer.accept(extent, rejectionCheck);

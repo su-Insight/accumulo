@@ -26,7 +26,6 @@ import static org.apache.accumulo.core.metadata.schema.TabletMetadata.ColumnType
 import static org.apache.accumulo.core.metadata.schema.TabletMetadata.ColumnType.FLUSH_ID;
 import static org.apache.accumulo.core.metadata.schema.TabletMetadata.ColumnType.LOADED;
 import static org.apache.accumulo.core.metadata.schema.TabletMetadata.ColumnType.LOCATION;
-import static org.apache.accumulo.core.metadata.schema.TabletMetadata.ColumnType.PREV_ROW;
 import static org.apache.accumulo.core.metadata.schema.TabletMetadata.ColumnType.SELECTED;
 import static org.apache.accumulo.core.metadata.schema.TabletMetadata.ColumnType.TIME;
 import static org.apache.accumulo.core.util.LazySingletons.GSON;
@@ -125,7 +124,7 @@ public class AmpleConditionalWriterIT extends AccumuloClusterHarness {
       assertNull(context.getAmple().readTablet(e1).getLocation());
 
       var ctmi = new ConditionalTabletsMutatorImpl(context);
-      ctmi.mutateTablet(e1).requireAbsentOperation().requireAbsentLocation()
+      ctmi.mutateTablet(e1, e1.prevEndRow()).requireAbsentOperation().requireAbsentLocation()
           .putLocation(Location.future(ts1)).submit(tm -> false);
       var results = ctmi.process();
       assertEquals(Status.ACCEPTED, results.get(e1).getStatus());
@@ -133,7 +132,7 @@ public class AmpleConditionalWriterIT extends AccumuloClusterHarness {
       assertEquals(Location.future(ts1), context.getAmple().readTablet(e1).getLocation());
 
       ctmi = new ConditionalTabletsMutatorImpl(context);
-      ctmi.mutateTablet(e1).requireAbsentOperation().requireAbsentLocation()
+      ctmi.mutateTablet(e1, e1.prevEndRow()).requireAbsentOperation().requireAbsentLocation()
           .putLocation(Location.future(ts2)).submit(tm -> false);
       results = ctmi.process();
       assertEquals(Status.REJECTED, results.get(e1).getStatus());
@@ -141,35 +140,36 @@ public class AmpleConditionalWriterIT extends AccumuloClusterHarness {
       assertEquals(Location.future(ts1), context.getAmple().readTablet(e1).getLocation());
 
       ctmi = new ConditionalTabletsMutatorImpl(context);
-      ctmi.mutateTablet(e1).requireAbsentOperation().requireLocation(Location.future(ts1))
-          .putLocation(Location.current(ts1)).deleteLocation(Location.future(ts1))
-          .submit(tm -> false);
+      ctmi.mutateTablet(e1, e1.prevEndRow()).requireAbsentOperation()
+          .requireLocation(Location.future(ts1)).putLocation(Location.current(ts1))
+          .deleteLocation(Location.future(ts1)).submit(tm -> false);
       results = ctmi.process();
       assertEquals(Status.ACCEPTED, results.get(e1).getStatus());
 
       assertEquals(Location.current(ts1), context.getAmple().readTablet(e1).getLocation());
 
       ctmi = new ConditionalTabletsMutatorImpl(context);
-      ctmi.mutateTablet(e1).requireAbsentOperation().requireLocation(Location.future(ts1))
-          .putLocation(Location.current(ts1)).deleteLocation(Location.future(ts1))
-          .submit(tm -> false);
+      ctmi.mutateTablet(e1, e1.prevEndRow()).requireAbsentOperation()
+          .requireLocation(Location.future(ts1)).putLocation(Location.current(ts1))
+          .deleteLocation(Location.future(ts1)).submit(tm -> false);
       results = ctmi.process();
       assertEquals(Status.REJECTED, results.get(e1).getStatus());
 
       assertEquals(Location.current(ts1), context.getAmple().readTablet(e1).getLocation());
 
       ctmi = new ConditionalTabletsMutatorImpl(context);
-      ctmi.mutateTablet(e1).requireAbsentOperation().requireLocation(Location.future(ts2))
-          .putLocation(Location.current(ts2)).deleteLocation(Location.future(ts2))
-          .submit(tm -> false);
+      ctmi.mutateTablet(e1, e1.prevEndRow()).requireAbsentOperation()
+          .requireLocation(Location.future(ts2)).putLocation(Location.current(ts2))
+          .deleteLocation(Location.future(ts2)).submit(tm -> false);
       results = ctmi.process();
       assertEquals(Status.REJECTED, results.get(e1).getStatus());
 
       assertEquals(Location.current(ts1), context.getAmple().readTablet(e1).getLocation());
 
       ctmi = new ConditionalTabletsMutatorImpl(context);
-      ctmi.mutateTablet(e1).requireAbsentOperation().requireLocation(Location.current(ts1))
-          .deleteLocation(Location.current(ts1)).submit(tm -> false);
+      ctmi.mutateTablet(e1, e1.prevEndRow()).requireAbsentOperation()
+          .requireLocation(Location.current(ts1)).deleteLocation(Location.current(ts1))
+          .submit(tm -> false);
       results = ctmi.process();
       assertEquals(Status.ACCEPTED, results.get(e1).getStatus());
 
@@ -203,7 +203,7 @@ public class AmpleConditionalWriterIT extends AccumuloClusterHarness {
 
       var tm1 = TabletMetadata.builder(e1).putFile(stf1, dfv).putFile(stf2, dfv).putFile(stf3, dfv)
           .build();
-      ctmi.mutateTablet(e1).requireAbsentOperation().requireSame(tm1, PREV_ROW, FILES)
+      ctmi.mutateTablet(e1, e1.prevEndRow()).requireAbsentOperation().requireSame(tm1, FILES)
           .putFile(stf4, new DataFileValue(0, 0)).submit(tm -> false);
       var results = ctmi.process();
       assertEquals(Status.REJECTED, results.get(e1).getStatus());
@@ -214,7 +214,7 @@ public class AmpleConditionalWriterIT extends AccumuloClusterHarness {
       // simulate minor compacts where the tablet location is not set
       for (StoredTabletFile file : List.of(stf1, stf2, stf3)) {
         ctmi = new ConditionalTabletsMutatorImpl(context);
-        ctmi.mutateTablet(e1).requireAbsentOperation().requireSame(tm2, LOCATION)
+        ctmi.mutateTablet(e1, e1.prevEndRow()).requireAbsentOperation().requireSame(tm2, LOCATION)
             .putFile(file, new DataFileValue(0, 0)).submit(tm -> false);
         results = ctmi.process();
         assertEquals(Status.REJECTED, results.get(e1).getStatus());
@@ -225,7 +225,7 @@ public class AmpleConditionalWriterIT extends AccumuloClusterHarness {
       // set the location
       var tm3 = TabletMetadata.builder(e1).build(LOCATION);
       ctmi = new ConditionalTabletsMutatorImpl(context);
-      ctmi.mutateTablet(e1).requireAbsentOperation().requireSame(tm3, LOCATION)
+      ctmi.mutateTablet(e1, e1.prevEndRow()).requireAbsentOperation().requireSame(tm3, LOCATION)
           .putLocation(Location.current(ts1)).submit(tm -> false);
       results = ctmi.process();
       assertEquals(Status.ACCEPTED, results.get(e1).getStatus());
@@ -234,7 +234,7 @@ public class AmpleConditionalWriterIT extends AccumuloClusterHarness {
       // simulate minor compacts where the tablet location is wrong
       for (StoredTabletFile file : List.of(stf1, stf2, stf3)) {
         ctmi = new ConditionalTabletsMutatorImpl(context);
-        ctmi.mutateTablet(e1).requireAbsentOperation().requireSame(tm4, LOCATION)
+        ctmi.mutateTablet(e1, e1.prevEndRow()).requireAbsentOperation().requireSame(tm4, LOCATION)
             .putFile(file, new DataFileValue(0, 0)).submit(tm -> false);
         results = ctmi.process();
         assertEquals(Status.REJECTED, results.get(e1).getStatus());
@@ -245,7 +245,7 @@ public class AmpleConditionalWriterIT extends AccumuloClusterHarness {
       // simulate minor compacts where the tablet location is set
       for (StoredTabletFile file : List.of(stf1, stf2, stf3)) {
         ctmi = new ConditionalTabletsMutatorImpl(context);
-        ctmi.mutateTablet(e1).requireAbsentOperation().requireSame(tm2, LOCATION)
+        ctmi.mutateTablet(e1, e1.prevEndRow()).requireAbsentOperation().requireSame(tm2, LOCATION)
             .putFile(file, new DataFileValue(0, 0)).submit(tm -> false);
         results = ctmi.process();
         assertEquals(Status.ACCEPTED, results.get(e1).getStatus());
@@ -259,9 +259,9 @@ public class AmpleConditionalWriterIT extends AccumuloClusterHarness {
           TabletMetadata.builder(e1).putFile(stf1, dfv).putFile(stf2, dfv).putFile(stf3, dfv)
               .putFile(stf4, dfv).build())) {
         ctmi = new ConditionalTabletsMutatorImpl(context);
-        ctmi.mutateTablet(e1).requireAbsentOperation().requireSame(tabletMeta, FILES)
-            .putFile(stf4, new DataFileValue(0, 0)).deleteFile(stf1).deleteFile(stf2)
-            .deleteFile(stf3).submit(tm -> false);
+        ctmi.mutateTablet(e1, e1.prevEndRow()).requireAbsentOperation()
+            .requireSame(tabletMeta, FILES).putFile(stf4, new DataFileValue(0, 0)).deleteFile(stf1)
+            .deleteFile(stf2).deleteFile(stf3).submit(tm -> false);
         results = ctmi.process();
         assertEquals(Status.REJECTED, results.get(e1).getStatus());
         assertEquals(Set.of(stf1, stf2, stf3), context.getAmple().readTablet(e1).getFiles());
@@ -271,7 +271,7 @@ public class AmpleConditionalWriterIT extends AccumuloClusterHarness {
       ctmi = new ConditionalTabletsMutatorImpl(context);
       var tm5 = TabletMetadata.builder(e1).putFile(stf1, dfv).putFile(stf2, dfv).putFile(stf3, dfv)
           .build();
-      ctmi.mutateTablet(e1).requireAbsentOperation().requireSame(tm5, FILES)
+      ctmi.mutateTablet(e1, e1.prevEndRow()).requireAbsentOperation().requireSame(tm5, FILES)
           .putFile(stf4, new DataFileValue(0, 0)).deleteFile(stf1).deleteFile(stf2).deleteFile(stf3)
           .submit(tm -> false);
       results = ctmi.process();
@@ -287,7 +287,7 @@ public class AmpleConditionalWriterIT extends AccumuloClusterHarness {
           .of(new Path("hdfs://localhost:8020/accumulo/tables/2a/b-0000009/I0000074.rf"));
       ctmi = new ConditionalTabletsMutatorImpl(context);
       var tm6 = TabletMetadata.builder(e1).build(LOADED);
-      ctmi.mutateTablet(e1).requireAbsentOperation().requireSame(tm6, LOADED)
+      ctmi.mutateTablet(e1, e1.prevEndRow()).requireAbsentOperation().requireSame(tm6, LOADED)
           .putFile(stf5, new DataFileValue(0, 0)).putBulkFile(stf5.getTabletFile(), 9L)
           .putFile(stf5, new DataFileValue(0, 0)).submit(tm -> false);
       results = ctmi.process();
@@ -300,7 +300,7 @@ public class AmpleConditionalWriterIT extends AccumuloClusterHarness {
           .of(new Path("hdfs://localhost:8020/accumulo/tables/2a/default_tablet/A0000075.rf"));
       ctmi = new ConditionalTabletsMutatorImpl(context);
       var tm7 = TabletMetadata.builder(e1).putFile(stf4, dfv).putFile(stf5, dfv).build();
-      ctmi.mutateTablet(e1).requireAbsentOperation().requireSame(tm7, FILES)
+      ctmi.mutateTablet(e1, e1.prevEndRow()).requireAbsentOperation().requireSame(tm7, FILES)
           .putFile(stf6, new DataFileValue(0, 0)).deleteFile(stf4).deleteFile(stf5)
           .submit(tm -> false);
       results = ctmi.process();
@@ -310,7 +310,7 @@ public class AmpleConditionalWriterIT extends AccumuloClusterHarness {
 
       // simulate trying to re bulk import file after a compaction
       ctmi = new ConditionalTabletsMutatorImpl(context);
-      ctmi.mutateTablet(e1).requireAbsentOperation().requireSame(tm6, LOADED)
+      ctmi.mutateTablet(e1, e1.prevEndRow()).requireAbsentOperation().requireSame(tm6, LOADED)
           .putFile(stf5, new DataFileValue(0, 0)).putBulkFile(stf5.getTabletFile(), 9L)
           .submit(tm -> false);
       results = ctmi.process();
@@ -339,7 +339,7 @@ public class AmpleConditionalWriterIT extends AccumuloClusterHarness {
     // simulate a compaction where the tablet location is not set
     var ctmi = new ConditionalTabletsMutatorImpl(context);
     var tm1 = TabletMetadata.builder(e1).build(FILES, SELECTED);
-    ctmi.mutateTablet(e1).requireAbsentOperation().requireSame(tm1, PREV_ROW, FILES)
+    ctmi.mutateTablet(e1, e1.prevEndRow()).requireAbsentOperation().requireSame(tm1, FILES)
         .putFile(stf1, dfv).putFile(stf2, dfv).putFile(stf3, dfv).submit(tm -> false);
     var results = ctmi.process();
     assertEquals(Status.ACCEPTED, results.get(e1).getStatus());
@@ -347,7 +347,8 @@ public class AmpleConditionalWriterIT extends AccumuloClusterHarness {
     assertEquals(Set.of(stf1, stf2, stf3), context.getAmple().readTablet(e1).getFiles());
 
     ctmi = new ConditionalTabletsMutatorImpl(context);
-    ctmi.mutateTablet(e1).requireAbsentOperation().requireSame(tm1, PREV_ROW, FILES, SELECTED)
+    ctmi.mutateTablet(e1, e1.prevEndRow()).requireAbsentOperation()
+        .requireSame(tm1, FILES, SELECTED)
         .putSelectedFiles(new SelectedFiles(Set.of(stf1, stf2, stf3), true, 2L))
         .submit(tm -> false);
     results = ctmi.process();
@@ -359,7 +360,8 @@ public class AmpleConditionalWriterIT extends AccumuloClusterHarness {
     var tm2 = TabletMetadata.builder(e1).putFile(stf1, dfv).putFile(stf2, dfv).putFile(stf3, dfv)
         .build(SELECTED);
     ctmi = new ConditionalTabletsMutatorImpl(context);
-    ctmi.mutateTablet(e1).requireAbsentOperation().requireSame(tm2, PREV_ROW, FILES, SELECTED)
+    ctmi.mutateTablet(e1, e1.prevEndRow()).requireAbsentOperation()
+        .requireSame(tm2, FILES, SELECTED)
         .putSelectedFiles(new SelectedFiles(Set.of(stf1, stf2, stf3), true, 2L))
         .submit(tm -> false);
     results = ctmi.process();
@@ -382,8 +384,8 @@ public class AmpleConditionalWriterIT extends AccumuloClusterHarness {
       var tm3 = TabletMetadata.builder(e1).putFile(stf1, dfv).putFile(stf2, dfv).putFile(stf3, dfv)
           .putSelectedFiles(selectedFiles).build();
       ctmi = new ConditionalTabletsMutatorImpl(context);
-      ctmi.mutateTablet(e1).requireAbsentOperation().requireSame(tm3, PREV_ROW, FILES, SELECTED)
-          .deleteSelectedFiles().submit(tm -> false);
+      ctmi.mutateTablet(e1, e1.prevEndRow()).requireAbsentOperation()
+          .requireSame(tm3, FILES, SELECTED).deleteSelectedFiles().submit(tm -> false);
       results = ctmi.process();
       assertEquals(Status.REJECTED, results.get(e1).getStatus());
 
@@ -395,8 +397,8 @@ public class AmpleConditionalWriterIT extends AccumuloClusterHarness {
     var tm5 = TabletMetadata.builder(e1).putFile(stf1, dfv).putFile(stf2, dfv).putFile(stf3, dfv)
         .putSelectedFiles(new SelectedFiles(Set.of(stf1, stf2, stf3), true, 2L)).build();
     ctmi = new ConditionalTabletsMutatorImpl(context);
-    ctmi.mutateTablet(e1).requireAbsentOperation().requireSame(tm5, PREV_ROW, FILES, SELECTED)
-        .deleteSelectedFiles().submit(tm -> false);
+    ctmi.mutateTablet(e1, e1.prevEndRow()).requireAbsentOperation()
+        .requireSame(tm5, FILES, SELECTED).deleteSelectedFiles().submit(tm -> false);
     results = ctmi.process();
     assertEquals(Status.ACCEPTED, results.get(e1).getStatus());
 
@@ -427,8 +429,8 @@ public class AmpleConditionalWriterIT extends AccumuloClusterHarness {
       ConditionalTabletsMutatorImpl ctmi = new ConditionalTabletsMutatorImpl(context);
 
       // write the SelectedFiles to the keyextent
-      ctmi.mutateTablet(e1).requireAbsentOperation().putSelectedFiles(selectedFiles)
-          .submit(tm -> false);
+      ctmi.mutateTablet(e1, e1.prevEndRow()).requireAbsentOperation()
+          .putSelectedFiles(selectedFiles).submit(tm -> false);
 
       // verify we can read the selected files
       Status mutationStatus = ctmi.process().get(e1).getStatus();
@@ -492,8 +494,8 @@ public class AmpleConditionalWriterIT extends AccumuloClusterHarness {
       // submit a mutation with the condition that the selected files match what was originally
       // written
       DataFileValue dfv = new DataFileValue(100, 100);
-      ctmi.mutateTablet(e1).requireAbsentOperation().requireSame(tm1, SELECTED).putFile(stf4, dfv)
-          .submit(tm -> false);
+      ctmi.mutateTablet(e1, e1.prevEndRow()).requireAbsentOperation().requireSame(tm1, SELECTED)
+          .putFile(stf4, dfv).submit(tm -> false);
 
       mutationStatus = ctmi.process().get(e1).getStatus();
 
@@ -535,9 +537,9 @@ public class AmpleConditionalWriterIT extends AccumuloClusterHarness {
       var context = cluster.getServerContext();
 
       var ctmi = new ConditionalTabletsMutatorImpl(context);
-      ctmi.mutateTablet(e1).requireAbsentOperation().requireAbsentLocation()
+      ctmi.mutateTablet(e1, e1.prevEndRow()).requireAbsentOperation().requireAbsentLocation()
           .putLocation(Location.future(ts1)).submit(tm -> false);
-      ctmi.mutateTablet(e2).requireAbsentOperation().requireAbsentLocation()
+      ctmi.mutateTablet(e2, e2.prevEndRow()).requireAbsentOperation().requireAbsentLocation()
           .putLocation(Location.future(ts2)).submit(tm -> false);
       var results = ctmi.process();
 
@@ -552,13 +554,13 @@ public class AmpleConditionalWriterIT extends AccumuloClusterHarness {
       assertEquals(Set.of(e1, e2), results.keySet());
 
       ctmi = new ConditionalTabletsMutatorImpl(context);
-      ctmi.mutateTablet(e1).requireAbsentOperation().requireAbsentLocation()
+      ctmi.mutateTablet(e1, e1.prevEndRow()).requireAbsentOperation().requireAbsentLocation()
           .putLocation(Location.future(ts2)).submit(tm -> false);
-      ctmi.mutateTablet(e2).requireAbsentOperation().requireAbsentLocation()
+      ctmi.mutateTablet(e2, e2.prevEndRow()).requireAbsentOperation().requireAbsentLocation()
           .putLocation(Location.future(ts1)).submit(tm -> false);
-      ctmi.mutateTablet(e3).requireAbsentOperation().requireAbsentLocation()
+      ctmi.mutateTablet(e3, e3.prevEndRow()).requireAbsentOperation().requireAbsentLocation()
           .putLocation(Location.future(ts1)).submit(tm -> false);
-      ctmi.mutateTablet(e4).requireAbsentOperation().requireAbsentLocation()
+      ctmi.mutateTablet(e4, e4.prevEndRow()).requireAbsentOperation().requireAbsentLocation()
           .putLocation(Location.future(ts2)).submit(tm -> false);
       results = ctmi.process();
 
@@ -586,9 +588,12 @@ public class AmpleConditionalWriterIT extends AccumuloClusterHarness {
       var opid2 = TabletOperationId.from("MERGING:FATE[5678]");
 
       var ctmi = new ConditionalTabletsMutatorImpl(context);
-      ctmi.mutateTablet(e1).requireAbsentOperation().putOperation(opid1).submit(tm -> false);
-      ctmi.mutateTablet(e2).requireAbsentOperation().putOperation(opid2).submit(tm -> false);
-      ctmi.mutateTablet(e3).requireOperation(opid1).deleteOperation().submit(tm -> false);
+      ctmi.mutateTablet(e1, e1.prevEndRow()).requireAbsentOperation().putOperation(opid1)
+          .submit(tm -> false);
+      ctmi.mutateTablet(e2, e2.prevEndRow()).requireAbsentOperation().putOperation(opid2)
+          .submit(tm -> false);
+      ctmi.mutateTablet(e3, e3.prevEndRow()).requireOperation(opid1).deleteOperation()
+          .submit(tm -> false);
       var results = ctmi.process();
 
       assertEquals(Status.ACCEPTED, results.get(e1).getStatus());
@@ -603,8 +608,10 @@ public class AmpleConditionalWriterIT extends AccumuloClusterHarness {
       assertNull(context.getAmple().readTablet(e3).getOperationId());
 
       ctmi = new ConditionalTabletsMutatorImpl(context);
-      ctmi.mutateTablet(e1).requireOperation(opid2).deleteOperation().submit(tm -> false);
-      ctmi.mutateTablet(e2).requireOperation(opid1).deleteOperation().submit(tm -> false);
+      ctmi.mutateTablet(e1, e1.prevEndRow()).requireOperation(opid2).deleteOperation()
+          .submit(tm -> false);
+      ctmi.mutateTablet(e2, e2.prevEndRow()).requireOperation(opid1).deleteOperation()
+          .submit(tm -> false);
       results = ctmi.process();
 
       assertEquals(Status.REJECTED, results.get(e1).getStatus());
@@ -615,8 +622,10 @@ public class AmpleConditionalWriterIT extends AccumuloClusterHarness {
           context.getAmple().readTablet(e2).getOperationId().getType());
 
       ctmi = new ConditionalTabletsMutatorImpl(context);
-      ctmi.mutateTablet(e1).requireOperation(opid1).deleteOperation().submit(tm -> false);
-      ctmi.mutateTablet(e2).requireOperation(opid2).deleteOperation().submit(tm -> false);
+      ctmi.mutateTablet(e1, e1.prevEndRow()).requireOperation(opid1).deleteOperation()
+          .submit(tm -> false);
+      ctmi.mutateTablet(e2, e2.prevEndRow()).requireOperation(opid2).deleteOperation()
+          .submit(tm -> false);
       results = ctmi.process();
 
       assertEquals(Status.ACCEPTED, results.get(e1).getStatus());
@@ -634,11 +643,13 @@ public class AmpleConditionalWriterIT extends AccumuloClusterHarness {
       var ctmi = new ConditionalTabletsMutatorImpl(context);
 
       var tabletMeta1 = TabletMetadata.builder(e1).build(COMPACTED);
-      ctmi.mutateTablet(e1).requireAbsentOperation().requireSame(tabletMeta1, COMPACTED)
-          .putCompacted(55L).submit(tabletMetadata -> tabletMetadata.getCompacted().contains(55L));
+      ctmi.mutateTablet(e1, e1.prevEndRow()).requireAbsentOperation()
+          .requireSame(tabletMeta1, COMPACTED).putCompacted(55L)
+          .submit(tabletMetadata -> tabletMetadata.getCompacted().contains(55L));
       var tabletMeta2 = TabletMetadata.builder(e2).putCompacted(45L).build(COMPACTED);
-      ctmi.mutateTablet(e2).requireAbsentOperation().requireSame(tabletMeta2, COMPACTED)
-          .putCompacted(56L).submit(tabletMetadata -> tabletMetadata.getCompacted().contains(56L));
+      ctmi.mutateTablet(e2, e2.prevEndRow()).requireAbsentOperation()
+          .requireSame(tabletMeta2, COMPACTED).putCompacted(56L)
+          .submit(tabletMetadata -> tabletMetadata.getCompacted().contains(56L));
 
       var results = ctmi.process();
       assertEquals(Status.ACCEPTED, results.get(e1).getStatus());
@@ -649,8 +660,9 @@ public class AmpleConditionalWriterIT extends AccumuloClusterHarness {
       assertEquals(Set.of(), context.getAmple().readTablet(e2).getCompacted());
 
       ctmi = new ConditionalTabletsMutatorImpl(context);
-      ctmi.mutateTablet(e1).requireAbsentOperation().requireSame(tabletMeta1, COMPACTED)
-          .putCompacted(65L).putCompacted(75L).submit(tabletMetadata -> false);
+      ctmi.mutateTablet(e1, e1.prevEndRow()).requireAbsentOperation()
+          .requireSame(tabletMeta1, COMPACTED).putCompacted(65L).putCompacted(75L)
+          .submit(tabletMetadata -> false);
 
       results = ctmi.process();
       assertEquals(Status.ACCEPTED, results.get(e1).getStatus());
@@ -662,9 +674,9 @@ public class AmpleConditionalWriterIT extends AccumuloClusterHarness {
       ctmi = new ConditionalTabletsMutatorImpl(context);
       tabletMeta1 = TabletMetadata.builder(e2).putCompacted(55L).putCompacted(65L).putCompacted(75L)
           .putCompacted(45L).build(COMPACTED);
-      ctmi.mutateTablet(e1).requireAbsentOperation().requireSame(tabletMeta1, COMPACTED)
-          .deleteCompacted(55L).deleteCompacted(65L).deleteCompacted(75L)
-          .submit(tabletMetadata -> false);
+      ctmi.mutateTablet(e1, e1.prevEndRow()).requireAbsentOperation()
+          .requireSame(tabletMeta1, COMPACTED).deleteCompacted(55L).deleteCompacted(65L)
+          .deleteCompacted(75L).submit(tabletMetadata -> false);
       results = ctmi.process();
       assertEquals(Status.REJECTED, results.get(e1).getStatus());
       assertEquals(Set.of(55L, 65L, 75L), context.getAmple().readTablet(e1).getCompacted());
@@ -672,9 +684,9 @@ public class AmpleConditionalWriterIT extends AccumuloClusterHarness {
       // test require same with a subset
       ctmi = new ConditionalTabletsMutatorImpl(context);
       tabletMeta1 = TabletMetadata.builder(e2).putCompacted(55L).putCompacted(65L).build(COMPACTED);
-      ctmi.mutateTablet(e1).requireAbsentOperation().requireSame(tabletMeta1, COMPACTED)
-          .deleteCompacted(55L).deleteCompacted(65L).deleteCompacted(75L)
-          .submit(tabletMetadata -> false);
+      ctmi.mutateTablet(e1, e1.prevEndRow()).requireAbsentOperation()
+          .requireSame(tabletMeta1, COMPACTED).deleteCompacted(55L).deleteCompacted(65L)
+          .deleteCompacted(75L).submit(tabletMetadata -> false);
       results = ctmi.process();
       assertEquals(Status.REJECTED, results.get(e1).getStatus());
       assertEquals(Set.of(55L, 65L, 75L), context.getAmple().readTablet(e1).getCompacted());
@@ -683,9 +695,9 @@ public class AmpleConditionalWriterIT extends AccumuloClusterHarness {
       ctmi = new ConditionalTabletsMutatorImpl(context);
       tabletMeta1 = TabletMetadata.builder(e2).putCompacted(55L).putCompacted(65L).putCompacted(75L)
           .build(COMPACTED);
-      ctmi.mutateTablet(e1).requireAbsentOperation().requireSame(tabletMeta1, COMPACTED)
-          .deleteCompacted(55L).deleteCompacted(65L).deleteCompacted(75L)
-          .submit(tabletMetadata -> false);
+      ctmi.mutateTablet(e1, e1.prevEndRow()).requireAbsentOperation()
+          .requireSame(tabletMeta1, COMPACTED).deleteCompacted(55L).deleteCompacted(65L)
+          .deleteCompacted(75L).submit(tabletMetadata -> false);
       results = ctmi.process();
       assertEquals(Status.ACCEPTED, results.get(e1).getStatus());
       assertEquals(Set.of(), context.getAmple().readTablet(e1).getCompacted());
@@ -703,14 +715,14 @@ public class AmpleConditionalWriterIT extends AccumuloClusterHarness {
     assertFalse(rootMeta.getCompactId().isPresent());
 
     var ctmi = new ConditionalTabletsMutatorImpl(context);
-    ctmi.mutateTablet(RootTable.EXTENT).requireAbsentOperation().requireAbsentLocation()
-        .putCompactionId(7).submit(tm -> false);
+    ctmi.mutateTablet(RootTable.EXTENT, RootTable.EXTENT.prevEndRow()).requireAbsentOperation()
+        .requireAbsentLocation().putCompactionId(7).submit(tm -> false);
     var results = ctmi.process();
     assertEquals(Status.REJECTED, results.get(RootTable.EXTENT).getStatus());
     assertFalse(context.getAmple().readTablet(RootTable.EXTENT).getCompactId().isPresent());
 
     ctmi = new ConditionalTabletsMutatorImpl(context);
-    ctmi.mutateTablet(RootTable.EXTENT).requireAbsentOperation()
+    ctmi.mutateTablet(RootTable.EXTENT, RootTable.EXTENT.prevEndRow()).requireAbsentOperation()
         .requireLocation(Location.future(loc.getServerInstance())).putCompactionId(7)
         .submit(tm -> false);
     results = ctmi.process();
@@ -718,7 +730,7 @@ public class AmpleConditionalWriterIT extends AccumuloClusterHarness {
     assertFalse(context.getAmple().readTablet(RootTable.EXTENT).getCompactId().isPresent());
 
     ctmi = new ConditionalTabletsMutatorImpl(context);
-    ctmi.mutateTablet(RootTable.EXTENT).requireAbsentOperation()
+    ctmi.mutateTablet(RootTable.EXTENT, RootTable.EXTENT.prevEndRow()).requireAbsentOperation()
         .requireLocation(Location.current(loc.getServerInstance())).putCompactionId(7)
         .submit(tm -> false);
     results = ctmi.process();
@@ -735,8 +747,9 @@ public class AmpleConditionalWriterIT extends AccumuloClusterHarness {
           new MetadataTime(100, TimeType.MILLIS), new MetadataTime(0, TimeType.LOGICAL))) {
         var ctmi = new ConditionalTabletsMutatorImpl(context);
         var tabletMeta1 = TabletMetadata.builder(e1).putTime(time).build();
-        ctmi.mutateTablet(e1).requireAbsentOperation().requireSame(tabletMeta1, TIME)
-            .putTime(new MetadataTime(101, TimeType.LOGICAL)).submit(tabletMetadata -> false);
+        ctmi.mutateTablet(e1, e1.prevEndRow()).requireAbsentOperation()
+            .requireSame(tabletMeta1, TIME).putTime(new MetadataTime(101, TimeType.LOGICAL))
+            .submit(tabletMetadata -> false);
         var results = ctmi.process();
         assertEquals(Status.REJECTED, results.get(e1).getStatus());
         assertEquals(new MetadataTime(0, TimeType.MILLIS),
@@ -747,8 +760,9 @@ public class AmpleConditionalWriterIT extends AccumuloClusterHarness {
         var ctmi = new ConditionalTabletsMutatorImpl(context);
         var tabletMeta1 =
             TabletMetadata.builder(e1).putTime(new MetadataTime(i, TimeType.MILLIS)).build();
-        ctmi.mutateTablet(e1).requireAbsentOperation().requireSame(tabletMeta1, TIME)
-            .putTime(new MetadataTime(i + 1, TimeType.MILLIS)).submit(tabletMetadata -> false);
+        ctmi.mutateTablet(e1, e1.prevEndRow()).requireAbsentOperation()
+            .requireSame(tabletMeta1, TIME).putTime(new MetadataTime(i + 1, TimeType.MILLIS))
+            .submit(tabletMetadata -> false);
         var results = ctmi.process();
         assertEquals(Status.ACCEPTED, results.get(e1).getStatus());
         assertEquals(new MetadataTime(i + 1, TimeType.MILLIS),
@@ -768,8 +782,9 @@ public class AmpleConditionalWriterIT extends AccumuloClusterHarness {
 
       var tabletMeta1 = TabletMetadata.builder(e1).putFlushId(42L).build();
       assertTrue(tabletMeta1.getFlushId().isPresent());
-      ctmi.mutateTablet(e1).requireAbsentOperation().requireSame(tabletMeta1, FLUSH_ID)
-          .putFlushId(43L).submit(tabletMetadata -> tabletMetadata.getFlushId().orElse(-1) == 43L);
+      ctmi.mutateTablet(e1, e1.prevEndRow()).requireAbsentOperation()
+          .requireSame(tabletMeta1, FLUSH_ID).putFlushId(43L)
+          .submit(tabletMetadata -> tabletMetadata.getFlushId().orElse(-1) == 43L);
       var results = ctmi.process();
       assertEquals(Status.REJECTED, results.get(e1).getStatus());
       assertTrue(context.getAmple().readTablet(e1).getFlushId().isEmpty());
@@ -777,8 +792,9 @@ public class AmpleConditionalWriterIT extends AccumuloClusterHarness {
       ctmi = new ConditionalTabletsMutatorImpl(context);
       var tabletMeta2 = TabletMetadata.builder(e1).build(FLUSH_ID);
       assertFalse(tabletMeta2.getFlushId().isPresent());
-      ctmi.mutateTablet(e1).requireAbsentOperation().requireSame(tabletMeta2, FLUSH_ID)
-          .putFlushId(43L).submit(tabletMetadata -> tabletMetadata.getFlushId().orElse(-1) == 43L);
+      ctmi.mutateTablet(e1, e1.prevEndRow()).requireAbsentOperation()
+          .requireSame(tabletMeta2, FLUSH_ID).putFlushId(43L)
+          .submit(tabletMetadata -> tabletMetadata.getFlushId().orElse(-1) == 43L);
       results = ctmi.process();
       assertEquals(Status.ACCEPTED, results.get(e1).getStatus());
       assertEquals(43L, context.getAmple().readTablet(e1).getFlushId().getAsLong());
@@ -786,15 +802,17 @@ public class AmpleConditionalWriterIT extends AccumuloClusterHarness {
       ctmi = new ConditionalTabletsMutatorImpl(context);
       var tabletMeta3 = TabletMetadata.builder(e1).putFlushId(43L).build();
       assertTrue(tabletMeta1.getFlushId().isPresent());
-      ctmi.mutateTablet(e1).requireAbsentOperation().requireSame(tabletMeta3, FLUSH_ID)
-          .putFlushId(44L).submit(tabletMetadata -> tabletMetadata.getFlushId().orElse(-1) == 44L);
+      ctmi.mutateTablet(e1, e1.prevEndRow()).requireAbsentOperation()
+          .requireSame(tabletMeta3, FLUSH_ID).putFlushId(44L)
+          .submit(tabletMetadata -> tabletMetadata.getFlushId().orElse(-1) == 44L);
       results = ctmi.process();
       assertEquals(Status.ACCEPTED, results.get(e1).getStatus());
       assertEquals(44L, context.getAmple().readTablet(e1).getFlushId().getAsLong());
 
       ctmi = new ConditionalTabletsMutatorImpl(context);
-      ctmi.mutateTablet(e1).requireAbsentOperation().requireSame(tabletMeta3, FLUSH_ID)
-          .putFlushId(45L).submit(tabletMetadata -> tabletMetadata.getFlushId().orElse(-1) == 45L);
+      ctmi.mutateTablet(e1, e1.prevEndRow()).requireAbsentOperation()
+          .requireSame(tabletMeta3, FLUSH_ID).putFlushId(45L)
+          .submit(tabletMetadata -> tabletMetadata.getFlushId().orElse(-1) == 45L);
       results = ctmi.process();
       assertEquals(Status.REJECTED, results.get(e1).getStatus());
       assertEquals(44L, context.getAmple().readTablet(e1).getFlushId().getAsLong());
