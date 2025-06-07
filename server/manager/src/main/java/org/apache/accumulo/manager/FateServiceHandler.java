@@ -565,18 +565,21 @@ class FateServiceHandler implements FateService.Iface {
       }
       case TABLE_IMPORT: {
         TableOperation tableOp = TableOperation.IMPORT;
-        int IMPORT_DIR_OFFSET = 2; // offset where table list begins
+        final int IMPORT_DIR_OFFSET = 3; // offset where table list begins
         if (arguments.size() < IMPORT_DIR_OFFSET) {
           throw new ThriftTableOperationException(null, null, tableOp,
-              TableOperationExceptionType.OTHER,
-              "Expected at least " + IMPORT_DIR_OFFSET + "arguments, sar :" + arguments.size());
+              TableOperationExceptionType.OTHER, "Expected at least " + (IMPORT_DIR_OFFSET + 1)
+                  + "arguments, saw :" + arguments.size());
         }
         String tableName =
             validateName(arguments.get(0), tableOp, NEW_TABLE_NAME.and(NOT_BUILTIN_TABLE));
         boolean keepOffline = Boolean.parseBoolean(ByteBufferUtil.toString(arguments.get(1)));
         boolean keepMappings = Boolean.parseBoolean(ByteBufferUtil.toString(arguments.get(2)));
+        TabletAvailability initialAvailability =
+            TabletAvailability.valueOf(ByteBufferUtil.toString(arguments.get(3)));
 
-        List<ByteBuffer> exportDirArgs = arguments.stream().skip(3).collect(Collectors.toList());
+        List<ByteBuffer> exportDirArgs =
+            arguments.stream().skip(IMPORT_DIR_OFFSET + 1).collect(Collectors.toList());
         Set<String> exportDirs = ByteBufferUtil.toStringSet(exportDirArgs);
         NamespaceId namespaceId;
         try {
@@ -600,9 +603,9 @@ class FateServiceHandler implements FateService.Iface {
         }
 
         goalMessage += "Import table with new name: " + tableName + " from " + exportDirs;
-        manager.fate(type).seedTransaction(op.toString(), fateId,
-            new TraceRepo<>(new ImportTable(c.getPrincipal(), tableName, exportDirs, namespaceId,
-                keepMappings, keepOffline)),
+        manager.fate(type).seedTransaction(
+            op.toString(), fateId, new TraceRepo<>(new ImportTable(c.getPrincipal(), tableName,
+                exportDirs, namespaceId, keepMappings, keepOffline, initialAvailability)),
             autoCleanup, goalMessage);
         break;
       }

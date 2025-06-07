@@ -19,6 +19,7 @@
 package org.apache.accumulo.core.clientImpl;
 
 import org.apache.accumulo.core.client.admin.ImportConfiguration;
+import org.apache.accumulo.core.client.admin.TabletAvailability;
 
 import com.google.common.base.Preconditions;
 
@@ -26,6 +27,7 @@ public class ImportConfigurationImpl implements ImportConfiguration, ImportConfi
   private boolean built = false;
   private boolean keepOffline = false;
   private boolean keepMappingsFile = false;
+  private TabletAvailability initialAvailability = TabletAvailability.ONDEMAND;
 
   private final static String BUILT_ERROR_MSG = "ImportConfiguration was already built";
   private final static String NOT_BUILT_ERROR_MSG = "ImportConfiguration was not built yet";
@@ -45,6 +47,14 @@ public class ImportConfigurationImpl implements ImportConfiguration, ImportConfi
   }
 
   @Override
+  public Builder setInitialAvailability(TabletAvailability initialAvailability) {
+    Preconditions.checkState(!built, BUILT_ERROR_MSG);
+    Preconditions.checkState(initialAvailability != null, "initialAvailability is null");
+    this.initialAvailability = initialAvailability;
+    return this;
+  }
+
+  @Override
   public ImportConfiguration build() {
     built = true;
     return this;
@@ -60,5 +70,11 @@ public class ImportConfigurationImpl implements ImportConfiguration, ImportConfi
   public boolean isKeepMappings() {
     Preconditions.checkState(built, NOT_BUILT_ERROR_MSG);
     return keepMappingsFile;
+  }
+
+  @Override
+  public TabletAvailability getInitialAvailability() {
+    Preconditions.checkState(built, NOT_BUILT_ERROR_MSG);
+    return initialAvailability;
   }
 }

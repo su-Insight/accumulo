@@ -45,6 +45,13 @@ public interface ImportConfiguration {
   boolean isKeepMappings();
 
   /**
+   * @return the initial tablet availability for the table
+   *
+   * @since 4.0.0
+   */
+  TabletAvailability getInitialAvailability();
+
+  /**
    * A ImportConfiguration builder
    *
    * @since 2.1
@@ -72,6 +79,14 @@ public interface ImportConfiguration {
      *        importing.
      */
     Builder setKeepMappings(boolean keepMappings);
+
+    /**
+     * set the initial tablet availability for the table
+     *
+     * @param initialAvailability the initial tablet availability for the table
+     * @since 4.0.0
+     */
+    Builder setInitialAvailability(TabletAvailability initialAvailability);
 
     /**
      * Build the import table configuration

@@ -21,12 +21,13 @@ package org.apache.accumulo.manager.tableOps.tableImport;
 import java.io.Serializable;
 import java.util.List;
 
+import org.apache.accumulo.core.client.admin.TabletAvailability;
 import org.apache.accumulo.core.data.NamespaceId;
 import org.apache.accumulo.core.data.TableId;
 
 class ImportedTableInfo implements Serializable {
 
-  private static final long serialVersionUID = 2L;
+  private static final long serialVersionUID = 3L;
 
   public String user;
   public String tableName;
@@ -37,6 +38,7 @@ class ImportedTableInfo implements Serializable {
   public boolean keepMappings;
   public boolean keepOffline;
   public Integer exportedVersion = null;
+  public TabletAvailability initialAvailability = TabletAvailability.ONDEMAND;
 
   static class DirectoryMapping implements Serializable {
     private static final long serialVersionUID = 1L;

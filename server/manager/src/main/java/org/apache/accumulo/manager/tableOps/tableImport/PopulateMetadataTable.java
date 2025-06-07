@@ -20,6 +20,7 @@ package org.apache.accumulo.manager.tableOps.tableImport;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.apache.accumulo.core.Constants.IMPORT_MAPPINGS_FILE;
+import static org.apache.accumulo.core.metadata.schema.MetadataSchema.TabletsSection.TabletColumnFamily.AVAILABILITY_COLUMN;
 import static org.apache.accumulo.manager.tableOps.tableExport.ExportTable.VERSION_2;
 
 import java.io.BufferedInputStream;
@@ -56,6 +57,7 @@ import org.apache.accumulo.manager.Manager;
 import org.apache.accumulo.manager.tableOps.ManagerRepo;
 import org.apache.accumulo.server.fs.VolumeManager;
 import org.apache.accumulo.server.util.MetadataTableUtil;
+import org.apache.hadoop.fs.FSDataInputStream;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.io.Text;
 import org.slf4j.Logger;
@@ -103,7 +105,8 @@ class PopulateMetadataTable extends ManagerRepo {
     try (
         BatchWriter mbw =
             manager.getContext().createBatchWriter(AccumuloTable.METADATA.tableName());
-        ZipInputStream zis = new ZipInputStream(fs.open(path))) {
+        FSDataInputStream fsDataInputStream = fs.open(path);
+        ZipInputStream zis = new ZipInputStream(fsDataInputStream)) {
 
       Map<String,String> fileNameMappings = new HashMap<>();
       for (ImportedTableInfo.DirectoryMapping dm : tableInfo.directories) {
@@ -115,8 +118,11 @@ class PopulateMetadataTable extends ManagerRepo {
 
       ZipEntry zipEntry;
       while ((zipEntry = zis.getNextEntry()) != null) {
-        if (zipEntry.getName().equals(Constants.EXPORT_METADATA_FILE)) {
-          DataInputStream in = new DataInputStream(new BufferedInputStream(zis));
+        if (!zipEntry.getName().equals(Constants.EXPORT_METADATA_FILE)) {
+          continue;
+        }
+        try (BufferedInputStream bufferedInputStream = new BufferedInputStream(zis);
+            DataInputStream in = new DataInputStream(bufferedInputStream)) {
 
           Key key = new Key();
           Value val = new Value();
@@ -125,7 +131,12 @@ class PopulateMetadataTable extends ManagerRepo {
           Text currentRow = null;
           int dirCount = 0;
 
-          boolean sawTabletAvailability = false;
+          TabletAvailability initialAvailability = tableInfo.initialAvailability;
+          if (initialAvailability == null) {
+            log.error("Initial tablet availability is null and shouldn't be, defaulting to "
+                + TabletAvailability.ONDEMAND);
+            initialAvailability = TabletAvailability.ONDEMAND;
+          }
 
           while (true) {
             key.readFields(in);
@@ -166,11 +177,7 @@ class PopulateMetadataTable extends ManagerRepo {
             if (m == null || !currentRow.equals(metadataRow)) {
 
               if (m != null) {
-                if (!sawTabletAvailability) {
-                  // add a default tablet availability
-                  TabletColumnFamily.AVAILABILITY_COLUMN.put(m,
-                      TabletAvailabilityUtil.toValue(TabletAvailability.ONDEMAND));
-                }
+                AVAILABILITY_COLUMN.put(m, TabletAvailabilityUtil.toValue(initialAvailability));
                 mbw.addMutation(m);
               }
 
@@ -183,24 +190,16 @@ class PopulateMetadataTable extends ManagerRepo {
               m = new Mutation(metadataRow);
               ServerColumnFamily.DIRECTORY_COLUMN.put(m, new Value(tabletDir));
               currentRow = metadataRow;
-              sawTabletAvailability = false;
             }
 
-            if (TabletColumnFamily.AVAILABILITY_COLUMN.hasColumns(key)) {
-              sawTabletAvailability = true;
-            }
+            // add the initial tablet availability
+            AVAILABILITY_COLUMN.put(m, TabletAvailabilityUtil.toValue(initialAvailability));
+
             m.put(key.getColumnFamily(), cq, val);
 
             if (endRow == null && TabletColumnFamily.PREV_ROW_COLUMN.hasColumns(key)) {
-
-              if (!sawTabletAvailability) {
-                // add a default tablet availability
-                TabletColumnFamily.AVAILABILITY_COLUMN.put(m,
-                    TabletAvailabilityUtil.toValue(TabletAvailability.ONDEMAND));
-              }
-
               mbw.addMutation(m);
-              break; // it is the last column in the last row
+              break; // it's the last column in the last row
             }
           }
           break;
