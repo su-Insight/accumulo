@@ -35,11 +35,11 @@ permissions:
 jobs:
   # fast build to populate the local maven repository cache
   fastbuild:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11
     - name: Set up JDK 17
-      uses: actions/setup-java@v4
+      uses: actions/setup-java@5896cecc08fd8a1fbdfaf517e29b571164b031f7
       with:
         distribution: adopt
         java-version: 17
@@ -73,11 +73,11 @@ jobs:
           - {name: 'compat',        javaver: 17, args: 'package -DskipTests -Dversion.hadoop=3.0.3 -Dversion.zookeeper=3.5.10'}
           - {name: 'errorprone',    javaver: 17, args: 'verify -Perrorprone,skipQA'}
       fail-fast: false
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11
     - name: Set up JDK ${{ matrix.profile.javaver }}
-      uses: actions/setup-java@v4
+      uses: actions/setup-java@5896cecc08fd8a1fbdfaf517e29b571164b031f7
       with:
         distribution: adopt
         java-version: ${{ matrix.profile.javaver }}
