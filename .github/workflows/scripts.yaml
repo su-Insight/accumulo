@@ -36,9 +36,9 @@ jobs:
   shfmt:
     name: shfmt
     timeout-minutes: 3
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29
     - name: Show the first log message
       run: git log -n1
     - name: Install shfmt
@@ -49,9 +49,9 @@ jobs:
   shellcheck:
     name: ShellCheck
     timeout-minutes: 3
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29
     - name: Show the first log message
       run: git log -n1
     - name: Install shfmt
@@ -62,9 +62,9 @@ jobs:
   thrift:
     name: Thrift
     timeout-minutes: 3
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29
     - name: Show the first log message
       run: git log -n1
     - name: Update package repository
