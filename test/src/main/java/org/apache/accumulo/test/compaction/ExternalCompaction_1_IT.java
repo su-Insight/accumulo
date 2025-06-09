@@ -18,6 +18,8 @@
  */
 package org.apache.accumulo.test.compaction;
 
+import static com.google.common.collect.MoreCollectors.onlyElement;
+import static org.apache.accumulo.minicluster.ServerType.COMPACTION_COORDINATOR;
 import static org.apache.accumulo.minicluster.ServerType.TABLET_SERVER;
 import static org.apache.accumulo.test.compaction.ExternalCompactionTestUtils.MAX_DATA;
 import static org.apache.accumulo.test.compaction.ExternalCompactionTestUtils.QUEUE1;
@@ -80,7 +82,7 @@ import org.apache.accumulo.core.iterators.Filter;
 import org.apache.accumulo.core.iterators.IteratorEnvironment;
 import org.apache.accumulo.core.iterators.IteratorUtil.IteratorScope;
 import org.apache.accumulo.core.iterators.SortedKeyValueIterator;
-import org.apache.accumulo.core.metadata.MetadataTable;
+import org.apache.accumulo.core.metadata.AccumuloTable;
 import org.apache.accumulo.core.metadata.schema.ExternalCompactionFinalState;
 import org.apache.accumulo.core.metadata.schema.ExternalCompactionFinalState.FinalState;
 import org.apache.accumulo.core.metadata.schema.ExternalCompactionId;
@@ -92,6 +94,7 @@ import org.apache.accumulo.core.spi.compaction.SimpleCompactionDispatcher;
 import org.apache.accumulo.core.util.UtilWaitThread;
 import org.apache.accumulo.harness.MiniClusterConfigurationCallback;
 import org.apache.accumulo.harness.SharedMiniClusterBase;
+import org.apache.accumulo.minicluster.MiniAccumuloServerConfig;
 import org.apache.accumulo.minicluster.ServerType;
 import org.apache.accumulo.miniclusterImpl.MiniAccumuloClusterImpl.ProcessInfo;
 import org.apache.accumulo.miniclusterImpl.MiniAccumuloConfigImpl;
@@ -185,9 +188,16 @@ public class ExternalCompaction_1_IT extends SharedMiniClusterBase {
       writeData(client, table1);
       writeData(client, table2);
 
-      getCluster().getClusterControl().startCoordinator(CompactionCoordinator.class);
-      getCluster().getClusterControl().startCompactors(Compactor.class, 1, QUEUE1);
-      getCluster().getClusterControl().startCompactors(Compactor.class, 1, QUEUE2);
+      // This is an example of using the new ResourceGroups object to start new processes
+      MiniAccumuloServerConfig currentSC = getCluster().getClusterControl().getServerConfiguration();
+      MiniAccumuloServerConfig newSC = MiniAccumuloServerConfig.builder()
+              .put(currentSC) // maintain the current resource group config
+              .putDefaultResourceGroup(COMPACTION_COORDINATOR,1)
+              .putCompactorResourceGroup(QUEUE1, 1)
+              .putCompactorResourceGroup(QUEUE2, 1)
+              .build();
+      // start the compaction coordinator and two new compactors and maintain existing servers
+      getCluster().getClusterControl().setServerConfiguration(newSC);
 
       compact(client, table1, 2, QUEUE1, true);
       verify(client, table1, 2);
@@ -198,7 +208,6 @@ public class ExternalCompaction_1_IT extends SharedMiniClusterBase {
 
       compact(client, table2, 3, QUEUE2, true);
       verify(client, table2, 3);
-
     }
   }
 
@@ -409,23 +418,20 @@ public class ExternalCompaction_1_IT extends SharedMiniClusterBase {
       }
 
       LOG.info("Validating metadata table contents.");
-      TabletsMetadata tm = getCluster().getServerContext().getAmple().readTablets().forTable(tid)
-          .fetch(ColumnType.ECOMP).build();
-      List<TabletMetadata> md = new ArrayList<>();
-      tm.forEach(t -> md.add(t));
-      assertEquals(1, md.size());
-      TabletMetadata m = md.get(0);
-      Map<ExternalCompactionId,ExternalCompactionMetadata> em = m.getExternalCompactions();
-      assertEquals(1, em.size());
-      List<ExternalCompactionFinalState> finished = new ArrayList<>();
-      getFinalStatesForTable(getCluster(), tid).forEach(f -> finished.add(f));
-      assertEquals(1, finished.size());
-      assertEquals(em.entrySet().iterator().next().getKey(),
-          finished.get(0).getExternalCompactionId());
-      tm.close();
+      try (TabletsMetadata tm = getCluster().getServerContext().getAmple().readTablets()
+          .forTable(tid).fetch(ColumnType.ECOMP).build()) {
+        TabletMetadata m = tm.stream().collect(onlyElement());
+        Map<ExternalCompactionId,ExternalCompactionMetadata> em = m.getExternalCompactions();
+        assertEquals(1, em.size());
+        List<ExternalCompactionFinalState> finished = new ArrayList<>();
+        getFinalStatesForTable(getCluster(), tid).forEach(f -> finished.add(f));
+        assertEquals(1, finished.size());
+        assertEquals(em.entrySet().iterator().next().getKey(),
+            finished.get(0).getExternalCompactionId());
+      }
 
       // Force a flush on the metadata table before killing our tserver
-      client.tableOperations().flush(MetadataTable.NAME);
+      client.tableOperations().flush(AccumuloTable.METADATA.tableName());
 
       // Stop our TabletServer. Need to perform a normal shutdown so that the WAL is closed
       // normally.
