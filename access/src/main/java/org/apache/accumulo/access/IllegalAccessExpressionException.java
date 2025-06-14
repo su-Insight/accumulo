@@ -16,21 +16,19 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-package org.apache.accumulo.core.util;
+package org.apache.accumulo.access;
 
 import java.util.regex.PatternSyntaxException;
 
-import org.apache.accumulo.access.IllegalAccessExpressionException;
-
-public final class BadArgumentException extends PatternSyntaxException {
+/**
+ * TODO document
+ *
+ * @since ???
+ */
+public final class IllegalAccessExpressionException extends PatternSyntaxException {
   private static final long serialVersionUID = 1L;
 
-  public BadArgumentException(String desc, String badarg, int index) {
+  public IllegalAccessExpressionException(String desc, String badarg, int index) {
     super(desc, badarg, index);
-  }
-
-  public BadArgumentException(IllegalAccessExpressionException e) {
-    super(e.getDescription(), e.getPattern(), e.getIndex());
-    super.initCause(e);
   }
 }

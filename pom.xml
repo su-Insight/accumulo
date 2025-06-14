@@ -95,6 +95,7 @@
     <module>shell</module>
     <module>start</module>
     <module>test</module>
+    <module>access</module>
   </modules>
   <scm>
     <connection>scm:git:https://gitbox.apache.org/repos/asf/accumulo.git</connection>
@@ -327,6 +328,11 @@
         <groupId>junit</groupId>
         <artifactId>junit</artifactId>
         <version>4.13.2</version>
+      </dependency>
+      <dependency>
+        <groupId>org.apache.accumulo</groupId>
+        <artifactId>accumulo-access</artifactId>
+        <version>${project.version}</version>
       </dependency>
       <dependency>
         <groupId>org.apache.accumulo</groupId>
