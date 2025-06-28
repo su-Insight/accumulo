@@ -33,15 +33,15 @@ import com.google.common.net.HostAndPort;
 
 public class LogEntry {
 
-  private final String filePath;
+  private final String logReference;
 
-  public LogEntry(String filePath) {
-    validateFilePath(filePath);
-    this.filePath = filePath;
+  public LogEntry(String logReference) {
+    validateLogReference(logReference);
+    this.logReference = logReference;
   }
 
-  public String getFilePath() {
-    return this.filePath;
+  public String getLogReference() {
+    return this.logReference;
   }
 
   /**
@@ -52,23 +52,23 @@ public class LogEntry {
    * @param filePath path to validate
    * @throws IllegalArgumentException if the filePath is invalid
    */
-  private static void validateFilePath(String filePath) {
-    String[] parts = filePath.split("/");
+  private static void validateLogReference(String logReference) {
+    String[] parts = logReference.split("/");
 
-    if (parts.length < 2) {
+    if (parts.length != 3) {
       throw new IllegalArgumentException(
-          "Invalid filePath format. The path should at least contain tserver/UUID.");
+          "Invalid logReference format. The reference should contain exactly 3 parts: tserver, port, and UUID.");
     }
 
-    String tserverPart = parts[parts.length - 2];
-    String uuidPart = parts[parts.length - 1];
+    String tserverPart = parts[1];
+    String uuidPart = parts[2];
 
     try {
       HostAndPort.fromString(tserverPart);
     } catch (IllegalArgumentException e) {
       throw new IllegalArgumentException(
-          "Invalid tserver format in filePath. Expected format: host:port. Found '" + tserverPart
-              + "'");
+          "Invalid tserver format in logReference. Expected format: host:port. Found '"
+              + tserverPart + "'");
     }
 
     try {
@@ -89,7 +89,7 @@ public class LogEntry {
 
   @Override
   public String toString() {
-    return filePath;
+    return logReference;
   }
 
   @Override
@@ -101,29 +101,28 @@ public class LogEntry {
       return false;
     }
     LogEntry logEntry = (LogEntry) other;
-    return this.filePath.equals(logEntry.filePath);
+    return this.logReference.equals(logEntry.logReference);
   }
 
   @Override
   public int hashCode() {
-    return Objects.hash(filePath);
+    return Objects.hash(logReference);
   }
 
   public static LogEntry fromMetaWalEntry(Entry<Key,Value> entry) {
     String qualifier = entry.getKey().getColumnQualifier().toString();
-    String[] parts = qualifier.split("/", 2);
-    Preconditions.checkArgument(parts.length == 2 && parts[0].equals("-"),
-        "Malformed write-ahead log %s", qualifier);
-    return new LogEntry(parts[1]);
+    String[] parts = qualifier.split("/", 3);
+    Preconditions.checkArgument(parts.length == 3, "Malformed write-ahead log %s", qualifier);
+    return new LogEntry(parts[1] + "/" + parts[2]);
   }
 
   public String getUniqueID() {
-    String[] parts = filePath.split("/");
+    String[] parts = logReference.split("/");
     return parts[parts.length - 1];
   }
 
   public Text getColumnQualifier() {
-    return new Text("-/" + filePath);
+    return new Text(logReference);
   }
 
 }
