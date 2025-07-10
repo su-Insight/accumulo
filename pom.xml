@@ -731,6 +731,7 @@
             <showWarnings>true</showWarnings>
             <compilerArgs>
               <arg>-Xlint:all</arg>
+              <arg>-Xlint:-this-escape</arg>
               <arg>-Xlint:-processing</arg>
               <!-- suppress try to ignore unused variable in try-with-resources -->
               <arg>-Xlint:-try</arg>
